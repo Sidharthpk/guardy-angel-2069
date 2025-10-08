@@ -3,82 +3,106 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
+// Represents a single card in the memory game, handles flipping, fading, and interaction
 public class Card : MonoBehaviour
 {
-
+    // The ID of the sprite assigned to this card
     private int spriteID;
+
+    // Unique identifier for this card in the grid
     private int id;
+
+    // Tracks if the card is currently face-up
     private bool flipped;
+
+    // Tracks if the card is in the middle of a flip animation
     private bool turning;
+
+    // Reference to the Image component that displays the card's sprite
     [SerializeField]
     private Image img;
 
-    // flip card animation
-    // if changeSprite specified, will 90 degree, change to back/front sprite before flipping another 90 degree
+    // Coroutine that rotates the card 90 degrees around the Y-axis for a flip animation
+    // If changeSprite is true, it switches the visible sprite mid-flip
     private IEnumerator Flip90(Transform thisTransform, float time, bool changeSprite)
     {
+        // Save the starting and ending rotation states
         Quaternion startRotation = thisTransform.rotation;
         Quaternion endRotation = thisTransform.rotation * Quaternion.Euler(new Vector3(0, 90, 0));
+
+        // Determines how quickly the flip completes
         float rate = 1.0f / time;
         float t = 0.0f;
+
+        // Smoothly rotate the card over time
         while (t < 1.0f)
         {
             t += Time.deltaTime * rate;
             thisTransform.rotation = Quaternion.Slerp(startRotation, endRotation, t);
-
             yield return null;
         }
-        //change sprite and flip another 90degree
+
+        // Once rotated 90 degrees, switch sprite and continue flipping back to front
         if (changeSprite)
         {
-            flipped = !flipped;
-            ChangeSprite();
-            StartCoroutine(Flip90(transform, time, false));
+            flipped = !flipped; // Toggle card state
+            ChangeSprite();     // Change visible image
+            StartCoroutine(Flip90(transform, time, false)); // Continue second half of flip
         }
         else
-            turning = false;
+        {
+            turning = false; // Flip completed
+        }
     }
-    // perform a 180 degree flip
+
+    // Triggers a flip animation when the player interacts with the card
     public void Flip()
     {
-        turning = true;
-        AudioPlayer.Instance.PlayAudio(0);
-        StartCoroutine(Flip90(transform, 0.25f, true));
+        turning = true; // Prevents further clicks during flip
+        AudioPlayer.Instance.PlayAudio(0); // Plays flip sound
+        StartCoroutine(Flip90(transform, 0.25f, true)); // Starts flip animation
     }
-    // toggle front/back sprite
+
+    // Updates the card’s visible sprite based on its flipped state
     private void ChangeSprite()
     {
         if (spriteID == -1 || img == null) return;
+
+        // Show front sprite if flipped, otherwise show card back
         if (flipped)
             img.sprite = CardGridManager.Instance.GetSprite(spriteID);
         else
             img.sprite = CardGridManager.Instance.CardBack();
     }
-    // call fade animation
+
+    // Triggers fade animation when card is removed after a correct match
     public void Inactive()
     {
         StartCoroutine(Fade());
     }
-    // play fade animation by changing alpha of img's color
+
+    // Gradually fades the card’s image to transparent
     private IEnumerator Fade()
     {
         float rate = 1.0f / 2.5f;
         float t = 0.0f;
+
         while (t < 1.0f)
         {
             t += Time.deltaTime * rate;
-            img.color = Color.Lerp(img.color, Color.clear, t);
-
+            img.color = Color.Lerp(img.color, Color.clear, t); // Smooth fade-out
             yield return null;
         }
     }
-    // set card to be active color
+
+    // Restores card color if reactivated (useful for restarts)
     public void Active()
     {
         if (img)
             img.color = Color.white;
     }
-    // spriteID getter and setter
+
+    // Property for setting and getting the card’s sprite ID
     public int SpriteID
     {
         set
@@ -89,27 +113,34 @@ public class Card : MonoBehaviour
         }
         get { return spriteID; }
     }
-    // card ID getter and setter
+
+    // Property for setting and getting the card’s unique ID
     public int ID
     {
         set { id = value; }
         get { return id; }
     }
-    // reset card default rotation
+
+    // Resets card to face-down rotation for new games
     public void ResetRotation()
     {
         transform.rotation = Quaternion.Euler(new Vector3(0, 180, 0));
         flipped = true;
     }
-    // card onclick event
+
+    // Handles card button click event from UI
     public void CardBtn()
     {
+        // Ignore clicks if already flipped, turning, or game is inactive
         if (flipped || turning) return;
         if (!CardGridManager.Instance.canClick()) return;
+
+        // Start flip and notify manager of selection
         Flip();
         StartCoroutine(SelectionEvent());
     }
-    // inform manager card is selected with a slight delay
+
+    // Waits briefly after click before notifying manager (ensures smooth animation)
     private IEnumerator SelectionEvent()
     {
         yield return new WaitForSeconds(0.5f);
