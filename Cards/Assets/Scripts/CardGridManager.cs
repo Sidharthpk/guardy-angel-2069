@@ -5,189 +5,165 @@ using UnityEngine.UI;
 
 public class CardGridManager : MonoBehaviour
 {
+    public static CardGridManager Instance; // Singleton for easy access from Card.cs
+    public static int gameSize = 2;         // Size of the grid (NxN)
 
-    public static CardGridManager Instance;
-    public static int gameSize = 2;
-    // gameobject instance
-    [SerializeField]
-    private GameObject prefab;
-    // parent object of cards
-    [SerializeField]
-    private GameObject cardList;
-    // sprite for card back
-    [SerializeField]
-    private Sprite cardBack;
-    // all possible sprite for card front
-    [SerializeField]
-    private Sprite[] sprites;
-    // list of card
-    private Card[] cards;
+    [SerializeField] private GameObject prefab;      // Card prefab
+    [SerializeField] private GameObject cardList;    // Parent for all cards
+    [SerializeField] private Sprite cardBack;        // Sprite for card back
+    [SerializeField] private Sprite[] sprites;       // Array of possible front sprites
+    private Card[] cards;                            // Array holding all Card instances
 
-    //we place card on this panel
-    [SerializeField]
-    private GameObject panel;
-    [SerializeField]
-    private GameObject info;
-    // for preloading
-    [SerializeField]
-    private Card spritePreload;
-    // other UI
-    [SerializeField]
-    private Text sizeLabel;
-    [SerializeField]
-    private Slider sizeSlider;
-    [SerializeField]
-    private Text timeLabel;
-    private float time;
+    [SerializeField] private GameObject panel;       // Game panel
+    [SerializeField] private GameObject info;        // Info panel
+    [SerializeField] private Card spritePreload;     // Preload card for sprite caching
 
-    private int spriteSelected;
-    private int cardSelected;
-    private int cardLeft;
-    private bool gameStart;
+    [SerializeField] private Text sizeLabel;         // UI label showing grid size
+    [SerializeField] private Slider sizeSlider;      // Slider to adjust grid size
+    [SerializeField] private Text timeLabel;         // UI label for elapsed time
+
+    [SerializeField] private Text scoreLabel;        // UI label showing score and combo
+
+    private float time;           // Track elapsed game time
+    private int spriteSelected;   // Currently selected sprite ID
+    private int cardSelected;     // Currently selected card ID
+    private int cardLeft;         // Cards left to match
+    private bool gameStart;       // Is game running?
+
+    // Score and combo system
+    private int score = 0;        // Current score
+    private int combo = 0;        // Current combo streak
+    private int maxCombo = 0;     // Max combo achieved
+    private float comboTimer = 0f;  // Timer to reset combo if too much time passes
+    private float comboResetTime = 3f; // Combo expires after 3s of inactivity
+    private int highScore = 0;     // High score saved to PlayerPrefs
 
     void Awake()
     {
-        Instance = this;
+        Instance = this;                        // Set singleton instance
+        highScore = PlayerPrefs.GetInt("HighScore", 0); // Load saved high score
     }
+
     void Start()
     {
         gameStart = false;
-        panel.SetActive(false);
+        panel.SetActive(false); // Hide game panel initially
     }
-    // Purpose is to allow preloading of panel, so that it does not lag when it loads
-    // Call this in the start method to preload all sprites at start of the script
+
+    // Preload card sprites to avoid lag when flipping first time
     private void PreloadCardImage()
     {
         for (int i = 0; i < sprites.Length; i++)
             spritePreload.SpriteID = i;
+
         spritePreload.gameObject.SetActive(false);
     }
-    // Start a game
+
+    // Starts a new card game
     public void StartCardGame()
     {
-        if (gameStart) return; // return if game already running
+        if (gameStart) return;
         gameStart = true;
-        // toggle UI
+
         panel.SetActive(true);
         info.SetActive(false);
-        // set cards, size, position
-        SetGamePanel();
-        // renew gameplay variables
+
+        SetGamePanel();       // Setup card positions
         cardSelected = spriteSelected = -1;
         cardLeft = cards.Length;
-        // allocate sprite to card
-        SpriteCardAllocation();
-        StartCoroutine(HideFace());
+        SpriteCardAllocation(); // Assign sprites to cards
+        StartCoroutine(HideFace()); // Flip all cards face down after a brief delay
         time = 0;
+
+        // Reset score and combo
+        score = 0;
+        combo = 0;
+        maxCombo = 0;
+        UpdateScoreUI();
     }
 
-    // Initialize cards, size, and position based on size of game
+    // Setup grid panel: instantiate cards and position them
     private void SetGamePanel()
     {
-        // if game is odd, we should have 1 card less
         int isOdd = gameSize % 2;
+        cards = new Card[gameSize * gameSize - isOdd]; // Reduce one card if odd number
 
-        cards = new Card[gameSize * gameSize - isOdd];
-        // remove all gameobject from parent
         foreach (Transform child in cardList.transform)
-        {
-            GameObject.Destroy(child.gameObject);
-        }
-        // calculate position between each card & start position of each card based on the Panel
-        RectTransform panelsize = panel.transform.GetComponent(typeof(RectTransform)) as RectTransform;
+            Destroy(child.gameObject); // Clear old cards
+
+        RectTransform panelsize = panel.transform.GetComponent<RectTransform>();
         float row_size = panelsize.sizeDelta.x;
         float col_size = panelsize.sizeDelta.y;
-        float scale = 1.0f / gameSize;
+        float scale = 1.0f / gameSize;  // Scale cards to fit panel
         float xInc = row_size / gameSize;
         float yInc = col_size / gameSize;
         float curX = -xInc * (float)(gameSize / 2);
         float curY = -yInc * (float)(gameSize / 2);
 
-        if (isOdd == 0)
-        {
-            curX += xInc / 2;
-            curY += yInc / 2;
-        }
+        if (isOdd == 0) { curX += xInc / 2; curY += yInc / 2; }
+
         float initialX = curX;
-        // for each in y-axis
+
         for (int i = 0; i < gameSize; i++)
         {
             curX = initialX;
-            // for each in x-axis
             for (int j = 0; j < gameSize; j++)
             {
                 GameObject c;
-                // if is the last card and game is odd, we instead move the middle card on the panel to last spot
                 if (isOdd == 1 && i == (gameSize - 1) && j == (gameSize - 1))
                 {
                     int index = gameSize / 2 * gameSize + gameSize / 2;
-                    c = cards[index].gameObject;
+                    c = cards[index].gameObject; // Reuse middle card for odd grid
                 }
                 else
                 {
-                    // create card prefab
-                    c = Instantiate(prefab);
-                    // assign parent
-                    c.transform.parent = cardList.transform;
-
+                    c = Instantiate(prefab, cardList.transform); // Create new card
                     int index = i * gameSize + j;
                     cards[index] = c.GetComponent<Card>();
                     cards[index].ID = index;
-                    // modify its size
-                    c.transform.localScale = new Vector3(scale, scale);
+                    c.transform.localScale = new Vector3(scale, scale); // Scale card
                 }
-                // assign location
                 c.transform.localPosition = new Vector3(curX, curY, 0);
                 curX += xInc;
-
             }
             curY += yInc;
         }
+    }
 
-    }
-    // reset face-down rotation of all cards
-    void ResetFace()
-    {
-        for (int i = 0; i < gameSize; i++)
-            cards[i].ResetRotation();
-    }
-    // Flip all cards after a short period
+    // Flip all cards face down after showing them briefly
     IEnumerator HideFace()
     {
-        //display for a short moment before flipping
         yield return new WaitForSeconds(0.3f);
         for (int i = 0; i < cards.Length; i++)
             cards[i].Flip();
         yield return new WaitForSeconds(0.5f);
     }
-    // Allocate pairs of sprite to card instances
+
+    // Allocate sprites randomly to cards and create pairs
     private void SpriteCardAllocation()
     {
         int i, j;
         int[] selectedID = new int[cards.Length / 2];
-        // sprite selection
+
         for (i = 0; i < cards.Length / 2; i++)
         {
-            // get a random sprite
             int value = Random.Range(0, sprites.Length - 1);
-            // check previous number has not been selection
-            // if the number of cards is larger than number of sprites, it will reuse some sprites
             for (j = i; j > 0; j--)
-            {
                 if (selectedID[j - 1] == value)
                     value = (value + 1) % sprites.Length;
-            }
-            selectedID[i] = value;
+
+            selectedID[i] = value; // Save unique sprite IDs
         }
 
-        // card sprite deallocation
+        // Reset all cards
         for (i = 0; i < cards.Length; i++)
         {
             cards[i].Active();
             cards[i].SpriteID = -1;
             cards[i].ResetRotation();
         }
-        // card sprite pairing allocation
+
+        // Assign sprites to cards (pairing)
         for (i = 0; i < cards.Length / 2; i++)
             for (j = 0; j < 2; j++)
             {
@@ -197,90 +173,107 @@ public class CardGridManager : MonoBehaviour
 
                 cards[value].SpriteID = selectedID[i];
             }
-
     }
-    // Slider update gameSize
+
+    // Update grid size from slider
     public void SetGameSize()
     {
         gameSize = (int)sizeSlider.value;
         sizeLabel.text = gameSize + " X " + gameSize;
     }
-    // return Sprite based on its id
-    public Sprite GetSprite(int spriteId)
-    {
-        return sprites[spriteId];
-    }
-    // return card back Sprite
-    public Sprite CardBack()
-    {
-        return cardBack;
-    }
-    // check if clickable
-    public bool canClick()
-    {
-        if (!gameStart)
-            return false;
-        return true;
-    }
-    // card onclick event
+
+    public Sprite GetSprite(int spriteId) => sprites[spriteId];
+    public Sprite CardBack() => cardBack;
+    public bool canClick() => gameStart;
+
+    // Handle card selection, matching, scoring, and combo
     public void cardClicked(int spriteId, int cardId)
     {
-        // first card selected
         if (spriteSelected == -1)
         {
             spriteSelected = spriteId;
-            cardSelected = cardId;
+            cardSelected = cardId; // First card selected
         }
         else
-        { // second card selected
+        {
             if (spriteSelected == spriteId)
             {
-                //correctly matched
+                // ✅ Match found
                 cards[cardSelected].Inactive();
                 cards[cardId].Inactive();
                 cardLeft -= 2;
+
+                // Update combo & score
+                combo++;
+                if (combo > maxCombo) maxCombo = combo;
+                int comboBonus = 50 * combo;
+                score += 100 + comboBonus;
+
+                AudioPlayer.Instance.PlayAudio(1);
+                UpdateScoreUI();
+                comboTimer = 0f; // reset combo timer
+
                 CheckGameWin();
             }
             else
             {
-                // incorrectly matched
+                // ❌ Wrong match: reset combo
                 cards[cardSelected].Flip();
                 cards[cardId].Flip();
+                combo = 0;
+                UpdateScoreUI();
             }
             cardSelected = spriteSelected = -1;
         }
     }
-    // check if game is completed
+
     private void CheckGameWin()
     {
-        // win game
         if (cardLeft == 0)
         {
             EndGame();
             AudioPlayer.Instance.PlayAudio(1);
+
+            // Save high score
+            if (score > highScore)
+            {
+                highScore = score;
+                PlayerPrefs.SetInt("HighScore", highScore);
+                PlayerPrefs.Save();
+            }
         }
     }
-    // stop game
+
     private void EndGame()
     {
         gameStart = false;
         panel.SetActive(false);
     }
-    public void GiveUp()
-    {
-        EndGame();
-    }
-    public void DisplayInfo(bool i)
-    {
-        info.SetActive(i);
-    }
-    // track elasped time
+
+    public void GiveUp() => EndGame();
+    public void DisplayInfo(bool i) => info.SetActive(i);
+
     private void Update()
     {
         if (gameStart)
         {
             time += Time.deltaTime;
-            timeLabel.text = "Time: " + time + "s";
+            timeLabel.text = "Time: " + time.ToString("F1") + "s";
+
+            // Reset combo if timer expires
+            comboTimer += Time.deltaTime;
+            if (combo > 0 && comboTimer > comboResetTime)
+            {
+                combo = 0;
+                UpdateScoreUI();
+            }
         }
+    }
+
+    // Update score & combo UI
+    private void UpdateScoreUI()
+    {
+        if (scoreLabel)
+            scoreLabel.text = $"Score: {score} | Combo: x{combo} | Best: {highScore}";
     }
 }
