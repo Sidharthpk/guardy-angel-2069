@@ -3,155 +3,121 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-// Manages overall gameplay, card generation, logic, scoring, and layout
 public class CardGridManager : MonoBehaviour
 {
-    // Singleton reference for global access
+
     public static CardGridManager Instance;
-
-    // Game grid size (default 2x2)
     public static int gameSize = 2;
-
-    // Prefab reference for each card object
+    // gameobject instance
     [SerializeField]
     private GameObject prefab;
-
-    // Parent container that holds all card instances
+    // parent object of cards
     [SerializeField]
     private GameObject cardList;
-
-    // Sprite for the back side of each card
+    // sprite for card back
     [SerializeField]
     private Sprite cardBack;
-
-    // Array of available front sprites for random card assignment
+    // all possible sprite for card front
     [SerializeField]
     private Sprite[] sprites;
-
-    // List holding all active card objects
+    // list of card
     private Card[] cards;
 
-    // UI references
+    //we place card on this panel
     [SerializeField]
-    private GameObject panel;   // Game panel that holds all cards
+    private GameObject panel;
     [SerializeField]
-    private GameObject info;    // Info panel (for instructions or size selector)
+    private GameObject info;
+    // for preloading
     [SerializeField]
-    private Card spritePreload; // Used to preload sprites and prevent lag
+    private Card spritePreload;
+    // other UI
     [SerializeField]
-    private Text sizeLabel;     // Text showing current grid size
+    private Text sizeLabel;
     [SerializeField]
-    private Slider sizeSlider;  // Slider for selecting grid size
+    private Slider sizeSlider;
     [SerializeField]
-    private Text timeLabel;     // Displays elapsed time
-
-    // Timer variable
+    private Text timeLabel;
     private float time;
 
-    // Tracks selected cards and total remaining
     private int spriteSelected;
     private int cardSelected;
     private int cardLeft;
-
-    // Indicates if the game is currently running
     private bool gameStart;
 
-    // Initialize singleton instance
     void Awake()
     {
         Instance = this;
     }
-
-    // Initialize game state
     void Start()
     {
         gameStart = false;
-        panel.SetActive(false); // Hide gameplay panel until start
+        panel.SetActive(false);
     }
-
-    // Preload card sprites to memory to avoid lag during first play
+    // Purpose is to allow preloading of panel, so that it does not lag when it loads
+    // Call this in the start method to preload all sprites at start of the script
     private void PreloadCardImage()
     {
         for (int i = 0; i < sprites.Length; i++)
             spritePreload.SpriteID = i;
         spritePreload.gameObject.SetActive(false);
     }
-
-    // Called when the player starts the game
+    // Start a game
     public void StartCardGame()
     {
-        // Prevent multiple games running simultaneously
-        if (gameStart) return;
+        if (gameStart) return; // return if game already running
         gameStart = true;
-
-        // Enable gameplay panel, hide info UI
+        // toggle UI
         panel.SetActive(true);
         info.SetActive(false);
-
-        // Generate and position cards on the grid
+        // set cards, size, position
         SetGamePanel();
-
-        // Reset gameplay tracking variables
+        // renew gameplay variables
         cardSelected = spriteSelected = -1;
         cardLeft = cards.Length;
-
-        // Randomly assign sprite pairs to cards
+        // allocate sprite to card
         SpriteCardAllocation();
-
-        // Flip cards briefly before hiding to start gameplay
         StartCoroutine(HideFace());
-
-        // Reset timer
         time = 0;
     }
 
-    // Creates grid layout and positions all card objects dynamically
+    // Initialize cards, size, and position based on size of game
     private void SetGamePanel()
     {
-        // Adjust grid for odd-numbered sizes (so there’s always an even number of cards)
+        // if game is odd, we should have 1 card less
         int isOdd = gameSize % 2;
 
         cards = new Card[gameSize * gameSize - isOdd];
-
-        // Clear existing cards from parent container
+        // remove all gameobject from parent
         foreach (Transform child in cardList.transform)
         {
             GameObject.Destroy(child.gameObject);
         }
-
-        // Get panel size to calculate card positioning
+        // calculate position between each card & start position of each card based on the Panel
         RectTransform panelsize = panel.transform.GetComponent(typeof(RectTransform)) as RectTransform;
         float row_size = panelsize.sizeDelta.x;
         float col_size = panelsize.sizeDelta.y;
-
-        // Scale and spacing calculation based on grid size
         float scale = 1.0f / gameSize;
         float xInc = row_size / gameSize;
         float yInc = col_size / gameSize;
-
         float curX = -xInc * (float)(gameSize / 2);
         float curY = -yInc * (float)(gameSize / 2);
 
-        // Adjust start position for even grids
         if (isOdd == 0)
         {
             curX += xInc / 2;
             curY += yInc / 2;
         }
-
         float initialX = curX;
-
-        // Loop through rows (Y-axis)
+        // for each in y-axis
         for (int i = 0; i < gameSize; i++)
         {
             curX = initialX;
-
-            // Loop through columns (X-axis)
+            // for each in x-axis
             for (int j = 0; j < gameSize; j++)
             {
                 GameObject c;
-
-                // For odd grids, the last card is skipped to maintain pairing
+                // if is the last card and game is odd, we instead move the middle card on the panel to last spot
                 if (isOdd == 1 && i == (gameSize - 1) && j == (gameSize - 1))
                 {
                     int index = gameSize / 2 * gameSize + gameSize / 2;
@@ -159,56 +125,53 @@ public class CardGridManager : MonoBehaviour
                 }
                 else
                 {
-                    // Create new card object
+                    // create card prefab
                     c = Instantiate(prefab);
+                    // assign parent
                     c.transform.parent = cardList.transform;
 
                     int index = i * gameSize + j;
                     cards[index] = c.GetComponent<Card>();
                     cards[index].ID = index;
-
-                    // Scale card based on grid size
+                    // modify its size
                     c.transform.localScale = new Vector3(scale, scale);
                 }
-
-                // Position card within panel
+                // assign location
                 c.transform.localPosition = new Vector3(curX, curY, 0);
                 curX += xInc;
+
             }
             curY += yInc;
         }
-    }
 
-    // Resets all cards to face-down rotation
+    }
+    // reset face-down rotation of all cards
     void ResetFace()
     {
         for (int i = 0; i < gameSize; i++)
             cards[i].ResetRotation();
     }
-
-    // Hides all cards after a short delay to start the round
+    // Flip all cards after a short period
     IEnumerator HideFace()
     {
+        //display for a short moment before flipping
         yield return new WaitForSeconds(0.3f);
-
         for (int i = 0; i < cards.Length; i++)
             cards[i].Flip();
-
         yield return new WaitForSeconds(0.5f);
     }
-
-    // Randomly assigns matching pairs of sprites to cards
+    // Allocate pairs of sprite to card instances
     private void SpriteCardAllocation()
     {
         int i, j;
         int[] selectedID = new int[cards.Length / 2];
-
-        // Select random unique sprites for pairs
+        // sprite selection
         for (i = 0; i < cards.Length / 2; i++)
         {
+            // get a random sprite
             int value = Random.Range(0, sprites.Length - 1);
-
-            // Ensure no duplicate sprite selections in this batch
+            // check previous number has not been selection
+            // if the number of cards is larger than number of sprites, it will reuse some sprites
             for (j = i; j > 0; j--)
             {
                 if (selectedID[j - 1] == value)
@@ -217,15 +180,14 @@ public class CardGridManager : MonoBehaviour
             selectedID[i] = value;
         }
 
-        // Reset card visuals and states
+        // card sprite deallocation
         for (i = 0; i < cards.Length; i++)
         {
             cards[i].Active();
             cards[i].SpriteID = -1;
             cards[i].ResetRotation();
         }
-
-        // Assign each sprite ID to two random cards
+        // card sprite pairing allocation
         for (i = 0; i < cards.Length / 2; i++)
             for (j = 0; j < 2; j++)
             {
@@ -235,50 +197,45 @@ public class CardGridManager : MonoBehaviour
 
                 cards[value].SpriteID = selectedID[i];
             }
-    }
 
-    // Called when slider changes to update grid size label
+    }
+    // Slider update gameSize
     public void SetGameSize()
     {
         gameSize = (int)sizeSlider.value;
         sizeLabel.text = gameSize + " X " + gameSize;
     }
-
-    // Returns the front sprite based on its assigned ID
+    // return Sprite based on its id
     public Sprite GetSprite(int spriteId)
     {
         return sprites[spriteId];
     }
-
-    // Returns the shared card back sprite
+    // return card back Sprite
     public Sprite CardBack()
     {
         return cardBack;
     }
-
-    // Checks whether cards can be clicked (only during gameplay)
+    // check if clickable
     public bool canClick()
     {
         if (!gameStart)
             return false;
         return true;
     }
-
-    // Called when a card is clicked, handles matching logic
+    // card onclick event
     public void cardClicked(int spriteId, int cardId)
     {
-        // First card selection
+        // first card selected
         if (spriteSelected == -1)
         {
             spriteSelected = spriteId;
             cardSelected = cardId;
         }
         else
-        {
-            // Second card selection
+        { // second card selected
             if (spriteSelected == spriteId)
             {
-                // Correct match, fade out both cards
+                //correctly matched
                 cards[cardSelected].Inactive();
                 cards[cardId].Inactive();
                 cardLeft -= 2;
@@ -286,44 +243,38 @@ public class CardGridManager : MonoBehaviour
             }
             else
             {
-                // Incorrect match, flip both cards back
+                // incorrectly matched
                 cards[cardSelected].Flip();
                 cards[cardId].Flip();
             }
             cardSelected = spriteSelected = -1;
         }
     }
-
-    // Checks if all cards have been matched
+    // check if game is completed
     private void CheckGameWin()
     {
+        // win game
         if (cardLeft == 0)
         {
             EndGame();
-            AudioPlayer.Instance.PlayAudio(1); // Play win sound
+            AudioPlayer.Instance.PlayAudio(1);
         }
     }
-
-    // Ends the game, hides panel
+    // stop game
     private void EndGame()
     {
         gameStart = false;
         panel.SetActive(false);
     }
-
-    // Button event to stop the game prematurely
     public void GiveUp()
     {
         EndGame();
     }
-
-    // Toggles visibility of info panel
     public void DisplayInfo(bool i)
     {
         info.SetActive(i);
     }
-
-    // Updates timer display while the game is active
+    // track elasped time
     private void Update()
     {
         if (gameStart)
